@@ -40,7 +40,7 @@ def search_books(request):
     full_url = f'{API_URL}volumes?q={query_string}&key:{API_KEY}'
 
     response = requests.get(full_url)
-    
+
 
     if response.status_code == 200:
         data = response.json()
@@ -51,19 +51,19 @@ def search_books(request):
                 "totalItems": len(books_for_sale),
                 "items": books_for_sale
             }
-            
+
             return JsonResponse(response_data, safe=False, status=200)
-        
+
         return JsonResponse(data, safe=False)
     else:
         return JsonResponse({"error": "Erro ao acessar a API"}, status=500)
-    
+
 def book_detail(request, book_id):
     if not book_id:
         return JsonResponse({"message": "Parametos de pesquisa não informados"}, safe=False, status=400)
-    
+
     response = requests.get(f'{API_URL}volumes/{book_id}')
-    
+
     if response.status_code == 200:
         data = response.json()
         return JsonResponse(data, safe=False)
@@ -72,18 +72,18 @@ def book_detail(request, book_id):
 
 
 def books_for_home(request):
-    
+
     response = requests.get(f'{API_URL}volumes?q=*&maxResults=40')
-    
+
     if response.status_code == 200:
         data = response.json()
-        
+
         books_for_sale = [book for book in data.get('items', []) if book.get('saleInfo', {}).get('saleability') == 'FOR_SALE']
         response_data = {
             "totalItems": len(books_for_sale),
             "items": books_for_sale
         }
-            
+
         return JsonResponse(response_data, safe=False, status=200)
     else:
         return JsonResponse({"error": "Erro ao acessar a API do Google Books"}, status=500)
@@ -94,15 +94,15 @@ def user_orders(request):
         try:
             data = json.loads(request.body)
             user_id = data.get('user_id')
-            
+
             if not user_id:
                 return JsonResponse({"error": "Parâmetro user_id ausente"}, status=400)
-            
+
             try:
                 user = User.objects.get(id=user_id)
             except User.DoesNotExist:
                 return JsonResponse({"error": "Usuário não encontrado"}, status=404)
-            
+
             orders = Order.objects.filter(user=user)
 
             response_data = []
@@ -117,10 +117,10 @@ def user_orders(request):
                 })
 
             return JsonResponse(response_data, status=200, safe=False)
-        
+
         except json.JSONDecodeError:
             return JsonResponse({"error": "Erro ao decodificar o JSON"}, status=400)
-    
+
     else:
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
 
@@ -160,7 +160,7 @@ def checkout(request):
                         total_price=total_price,
                         data=order_date
                     )
-                
+
                 return JsonResponse({"success": "Compra finalizada com sucesso"}, status=200)
             else:
                 return JsonResponse({"error": "Erro ao processar itens do carrinho"}, status=400)
@@ -178,39 +178,58 @@ def create_user(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            firstname = data.get('firstname')
-            lastname = data.get('lastname')
-            email = data.get('email')
-            password = data.get('password')
-            street = data.get('street')
-            neighborhood = data.get('neighborhood')
-            city = data.get('city')
-            number = data.get('number')
-            
-            if not (firstname and lastname and email and password and street and neighborhood and city):
+            personal = data.get('personal')
+            address = data.get('address')
+            if not (personal or address):
+                return JsonResponse({'error': 'Dados de usuário ou endereços inválidos'}, status=400)
+
+            firstname = personal.get('firstName')
+            lastname = personal.get('lastName')
+            email = personal.get('email')
+            password = personal.get('password')
+            username = personal.get('username')
+
+            street = address.get('street')
+            neighborhood = address.get('neighborhood')
+            state = address.get('state')
+            city = address.get('city')
+            number = address.get('number')
+
+            if not (firstname and lastname and email and password and street and neighborhood and city and state):
                 return JsonResponse({'error': 'Preencha todos os campos obrigatórios'}, status=400)
-            
-            address = Addres.objects.create(
-                street=street,
-                neighborhood=neighborhood,
-                city=city,
-                number=number
-            )
-            
+
+
             user = User.objects.create_user(
-                username=email,
+                username=username,
                 email=email,
                 password=password,
                 first_name=firstname,
-                last_name=lastname
+                last_name=lastname,
+                is_active=True,
+                is_superuser=False,
+                is_staff=False
             )
-            
-            return JsonResponse({'message': 'Usuário criado com sucesso', 'user_id': user.id, 'email': user.email}, status=201)
+
+            address = Addres.objects.create(
+                user=user,
+                street=street,
+                neighborhood=neighborhood,
+                city=city,
+                state=state,
+                number=number
+            )
+            return JsonResponse({
+                'message': 'Usuário criado com sucesso',
+                'user_id': user.id,
+                'email': user.email
+            }, status=201)
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Verifique os dados enviados na consulta'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
     else:
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
-    
+
 @csrf_exempt
 def login(request):
     if request.method == 'POST':
@@ -218,7 +237,7 @@ def login(request):
             data = json.loads(request.body)
             username = data.get('username')
             password = data.get('password')
-            
+
             user = authenticate(request, username=username, password=password)
             if user is not None:
                 auth_login(request, user)
@@ -227,7 +246,8 @@ def login(request):
                     'message': 'Login successful',
                     'user_id': user.id,
                     'username': user.username,
-                    'email': user.email
+                    'email': user.email,
+                    'firstname': user.first_name
                 }
                 return JsonResponse(response_data, status=200)
             else:
@@ -235,15 +255,31 @@ def login(request):
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
     else:
-        return JsonResponse({'error': 'Only POST method allowed'}, status=405)   
-    
+        return JsonResponse({'error': 'Only POST method allowed'}, status=405)
+
 @csrf_exempt
 def logout_user(request):
     if request.method == 'POST':
         try:
-            auth_logout(request) 
+            auth_logout(request)
             return JsonResponse({'message': 'Logout successful'}, status=200)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
     else:
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
+
+@csrf_exempt
+def check_username(requests):
+    data = json.loads(requests.body)
+    username = data.get('username')
+
+    if not username:
+        return JsonResponse({'error': 'Parametro username não informado'}, status=400)
+    try:
+        user = User.objects.get(username=username)
+        if not user:
+            return JsonResponse({'message': 'Usuário não econtrado'}, status=200)
+        else:
+            return JsonResponse({'error': 'Já existe um usuário com este nome'}, status=400)
+    except User.DoesNotExist:
+        return JsonResponse({'message': 'Usuário não econtrado'}, status=200)
