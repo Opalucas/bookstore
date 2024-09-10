@@ -104,7 +104,16 @@ def user_orders(request):
                 return JsonResponse({"error": "Usuário não encontrado"}, status=404)
 
             orders = Order.objects.filter(user=user).select_related('address').prefetch_related('items')
+            address = Address.objects.get(user=user)
 
+            address_data = {
+                'fullname': address.fullName,
+                'street': address.street,
+                'city': address.city,
+                'state': address.state,
+                'neighborhood': address.neighborhood,
+                'number': address.number
+            }
             response_data = []
 
             for order in orders:
@@ -117,14 +126,6 @@ def user_orders(request):
                         'total_price': str(item.total_price)
                     })
 
-                address_data = {
-                    'fullName': f'{order.address.user.first_name} {order.address.user.last_name}',
-                    'street': order.address.street,
-                    'city': order.address.city,
-                    'neighborhood': order.address.neighborhood,
-                    'state': order.address.state,
-                    'number': order.address.number,
-                }
 
                 response_data.append({
                     'data': order.created_at,
