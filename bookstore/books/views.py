@@ -103,17 +103,7 @@ def user_orders(request):
             except User.DoesNotExist:
                 return JsonResponse({"error": "Usuário não encontrado"}, status=404)
 
-            orders = Order.objects.filter(user=user).select_related('address').prefetch_related('items')
-            address = Address.objects.get(user=user)
-
-            address_data = {
-                'fullname': address.fullName,
-                'street': address.street,
-                'city': address.city,
-                'state': address.state,
-                'neighborhood': address.neighborhood,
-                'number': address.number
-            }
+            orders = Order.objects.filter(user=user).select_related('address').prefetch_related('items').order_by('-created_at')
             response_data = []
 
             for order in orders:
@@ -125,9 +115,18 @@ def user_orders(request):
                         'unit_price': str(item.unit_price),
                         'total_price': str(item.total_price)
                     })
-
+                address = order.address
+                address_data = {
+                    'fullname': address.fullName,
+                    'street': address.street,
+                    'city': address.city,
+                    'state': address.state,
+                    'neighborhood': address.neighborhood,
+                    'number': address.number
+                }
 
                 response_data.append({
+                    'order_id': order.id,
                     'data': order.created_at,
                     'items': order_items,
                     'address': address_data
@@ -154,8 +153,24 @@ def checkout(request):
                 user = User.objects.get(id=user_id)
             except User.DoesNotExist:
                 return JsonResponse({"error": "Usuário não encontrado"}, status=404)
-            
-            address = Address.objects.get(user=user)
+            address = None
+            isNewAddress = shipping.get('newAddress')
+            if isNewAddress == 'True':
+                address = Address.objects.create(
+                    user = user,
+                    fullName=shipping.get('fullName'),
+                    street = shipping.get('street'),
+                    city = shipping.get('city'),
+                    neighborhood = shipping.get('neighborhood'),
+                    state = shipping.get('state'),
+                    number = shipping.get('number')
+                )
+            else:
+                addresses = Address.objects.filter(user=user).order_by('-id')
+                if addresses.exists():
+                    address = addresses.first()
+                else:
+                    return JsonResponse({"error": "Nenhum endereço encontrado para o usuário"}, status=404)
 
             order = Order.objects.create(
                 user=user,
@@ -303,11 +318,13 @@ def logout_user(request):
 def check_username(requests):
     data = json.loads(requests.body)
     username = data.get('username')
+    print(username)
 
     if not username:
         return JsonResponse({'error': 'Parametro username não informado'}, status=400)
     try:
         user = User.objects.get(username=username)
+        print(user.username)
         if not user:
             return JsonResponse({'message': 'Usuário não econtrado'}, status=200)
         else:
@@ -316,27 +333,38 @@ def check_username(requests):
         return JsonResponse({'message': 'Usuário não econtrado'}, status=200)
 
 @csrf_exempt
-def user_address(requests):
-    data = json.loads(requests.body)
-    username = data.get('username')
-
-    if not username:
-        return JsonResponse({'error': 'Parametro username não informado'}, status=404)
+def user_address(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método inválido, use POST'}, status=405)
+    
     try:
-        user = User.objects.get(username=username)
+        data = json.loads(request.body)
+        username = data.get('username')
+
+        if not username:
+            return JsonResponse({'error': 'Parâmetro username não informado'}, status=400)
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return JsonResponse({'error': 'Usuário não encontrado'}, status=404)
+
+        addresses = Address.objects.filter(user=user)
         
-        address = Address.objects.get(user=user)
-        
-        response_addres = {
-            'fullname': user.first_name + ' ' + user.last_name,
+        if not addresses.exists():
+            return JsonResponse({'error': 'Usuário sem endereço cadastrado'}, status=404)
+
+        response_addresses = [{
+            'fullname': f"{user.first_name} {user.last_name}",
             'street': address.street,
             'city': address.city,
             'neighborhood': address.neighborhood,
             'state': address.state,
             'number': address.number
-        }
-        return JsonResponse(response_addres, status=200)
-    except User.DoesNotExist:
-        return JsonResponse({'message': 'Usuário não econtrado'}, status=404)
-    except Address.DoesNotExist:
-        return JsonResponse({'error': 'Usuário sem endereço cadastrado'}, status=404)
+        } for address in addresses]
+
+        return JsonResponse({'addresses': response_addresses}, status=200)
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'JSON inválido'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': f'Erro interno do servidor: {str(e)}'}, status=500)
