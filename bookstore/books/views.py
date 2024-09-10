@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.http import JsonResponse
 import requests
-from .models import Order, Addres
+from .models import Order, Address, OrderItem
 from dotenv import load_dotenv
 import os
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
@@ -103,17 +103,33 @@ def user_orders(request):
             except User.DoesNotExist:
                 return JsonResponse({"error": "Usuário não encontrado"}, status=404)
 
-            orders = Order.objects.filter(user=user)
+            orders = Order.objects.filter(user=user).select_related('address').prefetch_related('items')
 
             response_data = []
 
             for order in orders:
+                order_items = []
+                for item in order.items.all():
+                    order_items.append({
+                        'product': item.product,
+                        'quantity': item.quantity,
+                        'unit_price': str(item.unit_price),
+                        'total_price': str(item.total_price)
+                    })
+
+                address_data = {
+                    'fullName': f'{order.address.user.first_name} {order.address.user.last_name}',
+                    'street': order.address.street,
+                    'city': order.address.city,
+                    'neighborhood': order.address.neighborhood,
+                    'state': order.address.state,
+                    'number': order.address.number,
+                }
+
                 response_data.append({
-                    'data': order.data,
-                    'product': order.product,
-                    'quantity': order.quantity,
-                    'unit_price': str(order.unit_price),
-                    'total_price': str(order.total_price)
+                    'data': order.created_at,
+                    'items': order_items,
+                    'address': address_data
                 })
 
             return JsonResponse(response_data, status=200, safe=False)
@@ -131,12 +147,21 @@ def checkout(request):
             data = json.loads(request.body)
             user_id = data.get('user_id')
             items = data.get('items')
+            shipping = data.get('shipping')
 
             try:
                 user = User.objects.get(id=user_id)
             except User.DoesNotExist:
                 return JsonResponse({"error": "Usuário não encontrado"}, status=404)
+            
+            address = Address.objects.get(user=user)
 
+            order = Order.objects.create(
+                user=user,
+                address=address
+            )
+
+            total_order_price = 0
             if items and isinstance(items, list):
                 for item in items:
                     product = item.get('product')
@@ -152,16 +177,21 @@ def checkout(request):
                     except (ValueError, TypeError):
                         return JsonResponse({"error": "Formato de data inválido"}, status=400)
 
-                    Order.objects.create(
-                        user=user,
+                    OrderItem.objects.create(
+                        order=order,
                         product=product,
                         quantity=quantity,
                         unit_price=unit_price,
                         total_price=total_price,
-                        data=order_date
+                        created_at=order_date
                     )
 
-                return JsonResponse({"success": "Compra finalizada com sucesso"}, status=200)
+                    total_order_price += total_price
+
+                order.total_price = total_order_price
+                order.save()
+
+                return JsonResponse({"success": "Compra finalizada com sucesso", "order_id": order.id}, status=200)
             else:
                 return JsonResponse({"error": "Erro ao processar itens do carrinho"}, status=400)
 
@@ -210,7 +240,7 @@ def create_user(request):
                 is_staff=False
             )
 
-            address = Addres.objects.create(
+            address = Address.objects.create(
                 user=user,
                 street=street,
                 neighborhood=neighborhood,
@@ -283,3 +313,29 @@ def check_username(requests):
             return JsonResponse({'error': 'Já existe um usuário com este nome'}, status=400)
     except User.DoesNotExist:
         return JsonResponse({'message': 'Usuário não econtrado'}, status=200)
+
+@csrf_exempt
+def user_address(requests):
+    data = json.loads(requests.body)
+    username = data.get('username')
+
+    if not username:
+        return JsonResponse({'error': 'Parametro username não informado'}, status=404)
+    try:
+        user = User.objects.get(username=username)
+        
+        address = Address.objects.get(user=user)
+        
+        response_addres = {
+            'fullname': user.first_name + ' ' + user.last_name,
+            'street': address.street,
+            'city': address.city,
+            'neighborhood': address.neighborhood,
+            'state': address.state,
+            'number': address.number
+        }
+        return JsonResponse(response_addres, status=200)
+    except User.DoesNotExist:
+        return JsonResponse({'message': 'Usuário não econtrado'}, status=404)
+    except Address.DoesNotExist:
+        return JsonResponse({'error': 'Usuário sem endereço cadastrado'}, status=404)
