@@ -47,7 +47,7 @@ source venv/bin/activate
 
 ### 4. Instalar as dependências
 
-Com o ambiente virtual ativado, instale as dependências necessárias utilizando o arquivo `requirements.txt`:
+Com o ambiente virtual ativado, instale as dependências necessárias utilizando o arquivo `requirements.txt` (localizado em `bookstore/requirements.txt`, certifique-se de que está neste diretório para continuar):
 
 ```bash
 pip install -r requirements.txt
@@ -88,20 +88,17 @@ No arquivo `.env`, adicione a seguinte linha:
 API_URL=https://www.googleapis.com/books/v1/
 ```
 ### 7. Executar migrações
+volte para a pasta que o projeto foi clonado
+
+```bash
+cd ..
+```
 
 Após configurar o banco de dados e o ambiente, aplique as migrações:
 
 ```bash
-python manage.py makemigrations
+python manage.py makemigrations books
 python manage.py migrate
-```
-
-### 8. Criar um superusuário
-
-Crie um superusuário para acessar o admin do Django:
-
-```bash
-python manage.py createsuperuser
 ```
 
 ### 9. Executar o servidor
