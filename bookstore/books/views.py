@@ -12,7 +12,6 @@ import json
 
 load_dotenv()
 
-API_KEY = os.getenv("API_KEY")
 API_URL = os.getenv("API_URL")
 
 def home(request):
@@ -24,8 +23,9 @@ def search_books(request):
     author = request.GET.get('author', '')
     for_sale = request.GET.get('for_sale', '')
 
-    if not category and not title and not author:
-        return JsonResponse({"message": "Parametos de pesquisa não informados"}, safe=False, status=400)
+    if not title and not author:
+        if not category:
+            return JsonResponse({"message": "Combine filtros para uma busca mais aprimorada!"}, safe=False, status=400)
 
     query_params = []
 
@@ -37,7 +37,7 @@ def search_books(request):
         query_params.append(f"inauthor:{author}")
 
     query_string = '+'.join(query_params)
-    full_url = f'{API_URL}volumes?q={query_string}&key:{API_KEY}'
+    full_url = f'{API_URL}volumes?q={query_string}'
 
     response = requests.get(full_url)
 
@@ -154,16 +154,16 @@ def checkout(request):
             except User.DoesNotExist:
                 return JsonResponse({"error": "Usuário não encontrado"}, status=404)
             address = None
-            isNewAddress = shipping.get('newAddress')
-            if isNewAddress == 'True':
+            is_new_address = shipping.get('newAddress') == True
+            if is_new_address:
                 address = Address.objects.create(
-                    user = user,
+                    user=user,
                     fullName=shipping.get('fullName'),
-                    street = shipping.get('street'),
-                    city = shipping.get('city'),
-                    neighborhood = shipping.get('neighborhood'),
-                    state = shipping.get('state'),
-                    number = shipping.get('number')
+                    street=shipping.get('street'),
+                    city=shipping.get('city'),
+                    neighborhood=shipping.get('neighborhood'),
+                    state=shipping.get('state'),
+                    number=shipping.get('number')
                 )
             else:
                 addresses = Address.objects.filter(user=user).order_by('-id')
@@ -234,14 +234,15 @@ def create_user(request):
             email = personal.get('email')
             password = personal.get('password')
             username = personal.get('username')
-
+            
+            fullName = address.get('fullName')
             street = address.get('street')
             neighborhood = address.get('neighborhood')
             state = address.get('state')
             city = address.get('city')
             number = address.get('number')
 
-            if not (firstname and lastname and email and password and street and neighborhood and city and state):
+            if not (firstname and lastname and email and password and street and neighborhood and city and state and fullName):
                 return JsonResponse({'error': 'Preencha todos os campos obrigatórios'}, status=400)
 
 
@@ -258,6 +259,7 @@ def create_user(request):
 
             address = Address.objects.create(
                 user=user,
+                fullName=fullName,
                 street=street,
                 neighborhood=neighborhood,
                 city=city,
