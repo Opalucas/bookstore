@@ -87,22 +87,21 @@ No arquivo `.env`, adicione a seguinte linha:
 ```bash
 API_URL=https://www.googleapis.com/books/v1/
 ```
-
-### 7. Criar um superusuário
-
-Crie um superusuário para acessar o admin do Django:
-
-```bash
-python manage.py createsuperuser
-```
-
-### 8. Executar migrações
+### 7. Executar migrações
 
 Após configurar o banco de dados e o ambiente, aplique as migrações:
 
 ```bash
 python manage.py makemigrations
 python manage.py migrate
+```
+
+### 8. Criar um superusuário
+
+Crie um superusuário para acessar o admin do Django:
+
+```bash
+python manage.py createsuperuser
 ```
 
 ### 9. Executar o servidor
